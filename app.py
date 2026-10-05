@@ -279,7 +279,7 @@ with tab1:
           if panic_points >= 4:
             status = "🔥 Pravděpodobná panika"
           elif panic_points >= 2:
-            status = "⚠️ Mírná korekce"
+            status = "⚠️️ Mírná korekce"
           else:
             status = "ℹ️ Standardní pohyb"
 
@@ -327,30 +327,55 @@ with tab2:
     if selected_ticker_news:
       try:
         stock = yf.Ticker(selected_ticker_news)
-        news_items = (
-            stock.news if hasattr(stock, "news") and stock.news else []
-        )
+        news_items = []
+        if hasattr(stock, "get_news"):
+          try:
+            news_items = stock.get_news()
+          except Exception:
+            pass
+
+        if not news_items and hasattr(stock, "news"):
+          news_items = stock.news or []
 
         if not news_items:
           st.info(
-              f"Pro tento ticker ({selected_ticker_news}) nebyly nalezeny žádné"
-              " zprávy."
+              f"Pro tento ticker ({selected_ticker_news}) se nepodařilo načíst"
+              " zprávy přímo přes yfinance API."
+          )
+          yahoo_url = f"https://finance.yahoo.com/quote/{selected_ticker_news}"
+          st.markdown(
+              f"👉 [Otevřít profil a zprávy pro {selected_ticker_news} přímo"
+              f" na Yahoo Finance]({yahoo_url})"
           )
         else:
           for item in news_items[:10]:
-            title = item.get("title") or item.get("content", {}).get(
-                "title", "Bez názvu"
+            content = item.get("content", item)
+            title = (
+                content.get("title")
+                or item.get("title")
+                or "Bez názvu"
             )
-            publisher = item.get("publisher") or item.get("content", {}).get(
-                "provider", {}
-            ).get("displayName", "Zdroj")
-            link = (
-                item.get("link")
-                or item.get("url")
-                or item.get("content", {}).get("canonicalUrl", {}).get("url", "")
+            publisher = (
+                content.get("provider", {}).get("displayName")
+                or content.get("publisher")
+                or item.get("publisher")
+                or "Zdroj"
             )
+            click_url = ""
+            click_dict = (
+                content.get("clickThroughUrl")
+                or content.get("link")
+                or item.get("link")
+            )
+            if isinstance(click_dict, dict):
+              click_url = click_dict.get("url", "")
+            elif isinstance(click_dict, str):
+              click_url = click_dict
 
-            st.markdown(f"- [**{title}**]({link}) *({publisher})*")
+            if not click_url:
+              click_url = f"https://finance.yahoo.com/quote/{selected_ticker_news}"
+
+            st.markdown(f"- [**{title}**]({click_url}) *({publisher})*")
       except Exception as e:
         st.error(f"Nelze načíst zprávy: {str(e)}")
   else:
