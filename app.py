@@ -18,8 +18,6 @@ def parse_user_ticker(user_input: str) -> str:
   """Převede zápis typu AT..LSE, BKTI.AMEX, 1846.SEHK na Yahoo formát (AT.L, BKTI, 1846.HK)."""
   text = user_input.strip().upper()
 
-  # Mapa uživatelských kódů burz na Yahoo přípony
-  # (můžete přidat libovolné další)
   exchange_map = {
       ".LSE": ".L",
       ".AMEX": "",
@@ -36,82 +34,102 @@ def parse_user_ticker(user_input: str) -> str:
       ".TSE": ".T",
   }
 
-  # Hledáme, zda vstup končí některým známi kódem burzy
   for user_suffix, yf_suffix in exchange_map.items():
     if text.endswith(user_suffix):
       base_ticker = text[: -len(user_suffix)].strip()
-      # Speciální ošetření pro číselné tickery (např. SEHK vyžaduje 4 číslice)
       if yf_suffix == ".HK" and base_ticker.isdigit():
         base_ticker = base_ticker.zfill(4)
       return f"{base_ticker}{yf_suffix}"
 
-  # Pokud uživatel zadal tečku nebo nic, zkusíme to nechat nebo vrátit čistý text
   return text
 
 
-# --- SPRÁVA WATCHLISTU ---
-st.sidebar.header("⭐ Správa Watchlistu")
+# --- SPRÁVA VÍCE WATCHLISTŮ V SESSION STATE ---
+if "watchlists" not in st.session_state:
+  st.session_state.watchlists = {
+      "Hlavní watchlist": ["NVDA", "CEZ.PR", "1846.HK", "AT.L"]
+  }
+
+if "active_watchlist" not in st.session_state:
+  st.session_state.active_watchlist = "Hlavní watchlist"
+
+st.sidebar.header("📁 Správa Watchlistů")
+
+# Výběr aktivního watchlistu nebo vytvoření nového
+watchlist_names = list(st.session_state.watchlists.keys())
+selected_wl = st.sidebar.selectbox(
+    "Aktivní watchlist:",
+    watchlist_names,
+    index=watchlist_names.index(st.session_state.active_watchlist),
+)
+st.session_state.active_watchlist = selected_wl
+
+# Vytvoření nového watchlistu
+with st.sidebar.expander("➕ Vytvořit nový watchlist"):
+  new_wl_name = st.text_input("Název watchlistu:")
+  if st.button("Vytvořit"):
+    if new_wl_name and new_wl_name not in st.session_state.watchlists:
+      st.session_state.watchlists[new_wl_name] = []
+      st.session_state.active_watchlist = new_wl_name
+      st.rerun()
+    else:
+      st.warning("Zadejte platný a unikátní název.")
+
+current_tickers = st.session_state.watchlists[st.session_state.active_watchlist]
+
+# --- PŘIDÁVÁNÍ TICKETŮ ---
+st.sidebar.subheader(f"⭐ Položky v: {st.session_state.active_watchlist}")
 st.sidebar.write(
     "Zadejte ticker a burzu (např. `AT..LSE`, `BKTI.AMEX`, `1846.SEHK` nebo"
     " `NVDA`)."
 )
 
-if "watchlist" not in st.session_state:
-  st.session_state.watchlist = ["NVDA", "CEZ.PR", "1846.HK", "AT.L"]
-
-# Formulář pro přidání nového tickeru
-with st.sidebar.form("add_ticker_form"):
-  new_ticker_input = st.text_input(
-      "Ticker a burza:", placeholder="např. AT..LSE nebo BKTI.AMEX"
-  )
-  submitted = st.form_submit_button("➕ Přidat do Watchlistu")
-
-  if submitted and new_ticker_input:
+new_ticker_input = st.sidebar.text_input(
+    "Přidat ticker:",
+    placeholder="např. AT..LSE",
+    key="input_new_ticker_box",
+)
+if st.sidebar.button("➕ Přidat do seznamu"):
+  if new_ticker_input:
     formatted_symbol = parse_user_ticker(new_ticker_input)
-
-    if formatted_symbol not in st.session_state.watchlist:
-      st.session_state.watchlist.append(formatted_symbol)
-      st.success(f"Přidáno jako: {formatted_symbol}")
+    if formatted_symbol not in current_tickers:
+      current_tickers.append(formatted_symbol)
+      st.sidebar.success(f"Přidáno: {formatted_symbol}")
+      st.rerun()
     else:
-      st.warning("Tento ticker už ve watchlistu je.")
+      st.sidebar.warning("Tento ticker už v tomto watchlistu je.")
 
-# Zobrazení aktuálního watchlistu s posouváním a mazáním
-st.sidebar.subheader("Aktivní Watchlist:")
-if st.session_state.watchlist:
-  for idx, item in enumerate(list(st.session_state.watchlist)):
-    col_name, col_up, col_down, col_del = st.sidebar.columns([2.5, 0.8, 0.8, 0.8])
+# --- ZOBRAZENÍ A ŘAZENÍ POLOŽEK ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Správa pořadí a mazání:")
 
-    col_name.write(f"• **{item}**")
+if current_tickers:
+  for idx, item in enumerate(list(current_tickers)):
+    cols = st.sidebar.columns([3, 1, 1])
+    cols.write(f"**{idx+1}. {item}**")
 
-    if idx > 0:
-      if col_up.button("▲", key=f"up_{item}"):
-        st.session_state.watchlist[idx], st.session_state.watchlist[idx - 1] = (
-            st.session_state.watchlist[idx - 1],
-            st.session_state.watchlist[idx],
-        )
-        st.rerun()
-
-    if idx < len(st.session_state.watchlist) - 1:
-      if col_down.button("▼", key=f"down_{item}"):
-        st.session_state.watchlist[idx], st.session_state.watchlist[idx + 1] = (
-            st.session_state.watchlist[idx + 1],
-            st.session_state.watchlist[idx],
-        )
-        st.rerun()
-
-    if col_del.button("❌", key=f"del_{item}"):
-      st.session_state.watchlist.remove(item)
+    # Přesun výše
+    if idx > 0 and cols[1].button("⬆️", key=f"up_{st.session_state.active_watchlist}_{item}"):
+      current_tickers[idx], current_tickers[idx - 1] = (
+          current_tickers[idx - 1],
+          current_tickers[idx],
+      )
       st.rerun()
 
-  if st.sidebar.button("🗑️ Smazat celý watchlist"):
-    st.session_state.watchlist = []
+    # Smazání položky
+    if cols[2].button("❌", key=f"del_{st.session_state.active_watchlist}_{item}"):
+      current_tickers.remove(item)
+      st.rerun()
+
+  if st.sidebar.button("🗑️ Vyčistit tento watchlist"):
+    st.session_state.watchlists[st.session_state.active_watchlist] = []
     st.rerun()
 else:
-  st.sidebar.info("Watchlist je prázdný.")
+  st.sidebar.info("Tento watchlist je prázdný.")
 
-watchlist_tickers = st.session_state.watchlist
+watchlist_tickers = current_tickers
 
-# Definice záložek
+# Definice záložek aplikace
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Srovnávací přehled Watchlistu",
     "📰 Zprávy pro vybraný ticker",
@@ -121,7 +139,9 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # --- TAB 1: SROVNÁVACÍ PŘEHLED WATCHLISTU ---
 with tab1:
-  st.subheader("📊 Hromadná analýza panických poklesů")
+  st.subheader(
+      f"📊 Hromadná analýza panických poklesů ({st.session_state.active_watchlist})"
+  )
 
   if not watchlist_tickers:
     st.warning("Zadejte prosím alespoň jeden ticker v postranním panelu.")
@@ -227,7 +247,7 @@ with tab1:
     else:
       st.error(
           "Nepodařilo se načíst data pro zadané tickery. Zkontrolujte, zda"
-          " existují."
+          " existují a mají správnou příponu."
       )
 
 # --- TAB 2: ZPRÁVY ---
@@ -235,7 +255,9 @@ with tab2:
   st.subheader("📰 Aktuální zprávy pro vybraný ticker")
   if watchlist_tickers:
     selected_ticker_news = st.selectbox(
-        "Vyberte ticker pro zobrazení zpráv:", watchlist_tickers
+        "Vyberte ticker pro zobrazení zpráv:",
+        watchlist_tickers,
+        key="news_ticker_select",
     )
 
     if selected_ticker_news:
@@ -268,7 +290,7 @@ with tab2:
       except Exception as e:
         st.error(f"Nelze načíst zprávy: {str(e)}")
   else:
-    st.info("Nejprve přidejte tickery v postranním panelu.")
+    st.info("Nejprve přidejte tickery do aktivního watchlistu.")
 
 # --- TAB 3: EDUKACE ---
 with tab3:
