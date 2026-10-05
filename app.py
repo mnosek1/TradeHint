@@ -49,8 +49,8 @@ def parse_user_ticker(user_input: str) -> str:
       ".STHLM": ".ST",
       ".HELSINKI": ".HE",
       ".COPENHAGEN": ".CO",
-      ".EB": ".SW",
-      ".EBS": ".SW",  # Bernská burza mapovaná na Yahoo ekvivalent
+      ".EB": ".EB",
+      ".EBS": ".EB",  # Bernská burza mapovaná na Yahoo ekvivalent
       ".VALUE": "",
       ".IIS": "",
       ".SFB": ".ST",
