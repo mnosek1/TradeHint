@@ -35,7 +35,7 @@ def parse_user_ticker(user_input: str) -> str:
       ".SW": ".SW",
       ".TSX": ".TO",
       ".TO": ".TO",
-      ".T": ".TO",  # Oprava: Kanadská burza .T -> .TO pro Yahoo Finance
+      ".T": ".TO",  # Kanadská burza .T -> .TO pro Yahoo Finance
       ".ASX": ".AX",
       ".AX": ".AX",
       ".TSE": ".T",
@@ -49,8 +49,8 @@ def parse_user_ticker(user_input: str) -> str:
       ".STHLM": ".ST",
       ".HELSINKI": ".HE",
       ".COPENHAGEN": ".CO",
-      ".EB": ".EB",
-      ".EBS": ".EB",  # Bernská burza mapovaná na Yahoo ekvivalent
+      ".EB": ".SW",  # Převod bernské burzy na švýcarskou SIX (.SW)
+      ".EBS": ".SW",  # Převod alternativní koncovky na švýcarskou SIX (.SW)
       ".VALUE": "",
       ".IIS": "",
       ".SFB": ".ST",
@@ -68,7 +68,7 @@ def parse_user_ticker(user_input: str) -> str:
         base_ticker = base_ticker.zfill(4)
       return f"{base_ticker}{yf_suffix}"
 
-  # 2. Pokud končí na mezeru a burzu (např. "PXT T")
+  # 2. Pokud končí na mezeru a burzu
   parts = text.split(" ")
   if len(parts) >= 2:
     potential_suffix = "." + parts[-1]
@@ -77,7 +77,5 @@ def parse_user_ticker(user_input: str) -> str:
       yf_suffix = exchange_map[potential_suffix]
       return f"{base_ticker}{yf_suffix}"
 
-  # 3. Speciální fallback pro tickery zadané bez burzy, ale známé z Xetry (např. C3R -> C3R.DE)
-  # Pokud ticker neobsahuje tečku a je to čistě text, zkusíme ho nechat nebo ošetřit,
-  # popř. pokud víte, že jde o Xetru, můžete zde vynutit .DE, ale raději nechejme standard.
+  # 3. Obecný fallback pro ostatní
   return text.replace(" ", "-")
