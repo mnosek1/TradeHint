@@ -12,22 +12,76 @@ st.caption(
     " výprodejů od fundamentálních problémů."
 )
 
-# --- SPRÁVA WATCHLISTU V POSTRANNÍM PANELU ---
-st.sidebar.header("⭐ Váš Watchlist")
+# --- SPRÁVA WATCHLISTU S VÝBĚREM BURZY ---
+st.sidebar.header("⭐ Správa Watchlistu")
 st.sidebar.write(
-    "Zadejte tickery oddělené čárkou, které chcete najednou analyzovat."
+    "Přidejte akcie do svého seznamu výběrem burzy a zadáním symbolu."
 )
 
-# Výchozí seznam zajímavých tickerů
-default_tickers = "NVDA, AAPL, TSLA, MSFT, GOOGL"
-tickers_input = st.sidebar.text_area(
-    "Tickery (např. NVDA, AAPL, TSLA):", value=default_tickers
-)
+# Inicializace stavu pro watchlist v paměti relace (session_state)
+if "watchlist" not in st.session_state:
+  st.session_state.watchlist = [
+      "NVDA",
+      "CEZ.PR",
+      "1846.HK",
+      "AT.L",
+  ]  # Výchozí ukázky
 
-# Zpracování vstupů do seznamu
-watchlist_tickers = [
-    t.strip().upper() for t in tickers_input.split(",") if t.strip()
-]
+# Formulář pro přidání nového tickeru
+with st.sidebar.form("add_ticker_form"):
+  col_input, col_exchange = st.columns([2, 1])
+
+  with col_input:
+    ticker_input = st.text_input("Ticker / Kód:", placeholder="např. 1846 nebo AT")
+
+  with col_exchange:
+    # Mapování přehledných názvů burz na Yahoo přípony
+    exchange_mapping = {
+        "USA (NYSE / NASDAQ)": "",
+        "SEHK (Hongkong - .HK)": ".HK",
+        "LSE (Londýn - .L)": ".L",
+        "PSE (Praha - .PR)": ".PR",
+        "EBS / SIX (Švýcarsko - .SW)": ".SW",
+        "Xetra (Německo - .DE)": ".DE",
+        "Euronext (Paříž/Amsterdam - .PA/.AS)": ".PA",
+    }
+    selected_exchange_name = st.selectbox("Burza", list(exchange_mapping.keys()))
+
+  submitted = st.form_submit_button("➕ Přidat do Watchlistu")
+
+  if submitted and ticker_input:
+    clean_ticker = ticker_input.strip().upper()
+    suffix = exchange_mapping[selected_exchange_name]
+
+    # Speciální ošetření pro číselné tickery (např. v SEHK často vyžadují 4 číslice)
+    if suffix == ".HK" and clean_ticker.isdigit():
+      clean_ticker = clean_ticker.zfill(4)
+
+    full_symbol = f"{clean_ticker}{suffix}"
+
+    if full_symbol not in st.session_state.watchlist:
+      st.session_state.watchlist.append(full_symbol)
+      st.success(f"Přidáno: {full_symbol}")
+    else:
+      st.warning("Tento ticker už ve watchlistu je.")
+
+# Zobrazení aktuálního watchlistu s možností mazání
+st.sidebar.subheader("Aktivní Watchlist:")
+if st.session_state.watchlist:
+  for item in list(st.session_state.watchlist):
+    col_item_name, col_item_del = st.sidebar.columns([3, 1])
+    col_item_name.write(f"• **{item}**")
+    if col_item_del.button("❌", key=f"del_{item}"):
+      st.session_state.watchlist.remove(item)
+      st.rerun()
+
+  if st.sidebar.button("🗑️ Smazat celý watchlist"):
+    st.session_state.watchlist = []
+    st.rerun()
+else:
+  st.sidebar.info("Watchlist je prázdný.")
+
+watchlist_tickers = st.session_state.watchlist
 
 # Definice záložek
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -127,8 +181,8 @@ with tab1:
 
           results.append({
               "Ticker": ticker_symbol,
-              "Cena ($)": round(current_price, 2),
-              "Denní změna": round(day_change_pct, 2),
+              "Cena": round(current_price, 2),
+              "Denní změna (%)": round(day_change_pct, 2),
               "Pokles od max (%)": round(drop_from_high, 2),
               "RSI (14)": round(rsi, 1),
               "Objem (x)": round(vol_ratio, 2),
@@ -138,62 +192,60 @@ with tab1:
               "Vyhodnocení": status,
           })
         except Exception:
-          # Pokud ticker selže, přeskočíme ho
           continue
 
     if results:
       df_results = pd.DataFrame(results)
-
-      # Zobrazení hlavní interaktivní tabulky
       st.dataframe(df_results, use_container_width=True)
-
       st.info(
-          "💡 **Tip:** Tabulka je plně interaktivní. Můžete kliknutím na"
-          " záhlaví sloupců řádky seřadit (např. podle nejnižšího RSI nebo"
-          " největšího poklesu)."
+          "💡 **Tip:** Tabulka je plně interaktivní. Kliknutím na záhlaví"
+          " sloupců můžete řádky seřadit."
       )
     else:
       st.error(
-          "Nepodařilo se načíst data pro zadané tickery. Zkontrolujte jejich"
-          " názvy."
+          "Nepodařilo se načíst data pro zadané tickery. Zkontrolujte, zda"
+          " existují."
       )
 
 # --- TAB 2: ZPRÁVY ---
 with tab2:
   st.subheader("📰 Aktuální zprávy pro vybraný ticker")
-  selected_ticker_news = st.selectbox(
-      "Vyberte ticker pro zobrazení zpráv:", watchlist_tickers
-  )
+  if watchlist_tickers:
+    selected_ticker_news = st.selectbox(
+        "Vyberte ticker pro zobrazení zpráv:", watchlist_tickers
+    )
 
-  if selected_ticker_news:
-    try:
-      stock = yf.Ticker(selected_ticker_news)
-      news_items = (
-          stock.news if hasattr(stock, "news") and stock.news else []
-      )
-
-      if not news_items:
-        st.info(
-            f"Pro tento ticker ({selected_ticker_news}) nebyly nalezeny žádné"
-            " aktuální zprávy."
+    if selected_ticker_news:
+      try:
+        stock = yf.Ticker(selected_ticker_news)
+        news_items = (
+            stock.news if hasattr(stock, "news") and stock.news else []
         )
-      else:
-        for item in news_items[:10]:
-          title = item.get("title") or item.get("content", {}).get(
-              "title", "Bez názvu"
-          )
-          publisher = item.get("publisher") or item.get("content", {}).get(
-              "provider", {}
-          ).get("displayName", "Zdroj")
-          link = (
-              item.get("link")
-              or item.get("url")
-              or item.get("content", {}).get("canonicalUrl", {}).get("url", "")
-          )
 
-          st.markdown(f"- [**{title}**]({link}) *({publisher})*")
-    except Exception as e:
-      st.error(f"Nelze načíst zprávy: {str(e)}")
+        if not news_items:
+          st.info(
+              f"Pro tento ticker ({selected_ticker_news}) nebyly nalezeny žádné"
+              " aktuální zprávy."
+          )
+        else:
+          for item in news_items[:10]:
+            title = item.get("title") or item.get("content", {}).get(
+                "title", "Bez názvu"
+            )
+            publisher = item.get("publisher") or item.get("content", {}).get(
+                "provider", {}
+            ).get("displayName", "Zdroj")
+            link = (
+                item.get("link")
+                or item.get("url")
+                or item.get("content", {}).get("canonicalUrl", {}).get("url", "")
+            )
+
+            st.markdown(f"- [**{title}**]({link}) *({publisher})*")
+      except Exception as e:
+        st.error(f"Nelze načíst zprávy: {str(e)}")
+  else:
+    st.info("Nejprve přidejte nějaké tickery v postranním panelu.")
 
 # --- TAB 3: EDUKACE ---
 with tab3:
