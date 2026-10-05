@@ -192,9 +192,10 @@ else:
 
 watchlist_tickers = current_tickers
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Srovnávací přehled Watchlistu",
     "📰 Zprávy & Laická interpretace",
+    "📑 Finanční výkazy & Zdraví",
     "🧠 Jak poznat paniku (Manuál)",
     "🛠️ Další nástroje & Tipy",
 ])
@@ -277,7 +278,7 @@ with tab1:
           if panic_points >= 4:
             status = "🔥 Pravděpodobná panika"
           elif panic_points >= 2:
-            status = "⚠️️ Mírná korekce"
+            status = "⚠️ Mírná korekce"
           else:
             status = "ℹ️ Standardní pohyb"
 
@@ -335,7 +336,6 @@ with tab2:
         if not news_items and hasattr(stock, "news"):
           news_items = stock.news or []
 
-        # --- LAICKÁ INTERPRETACE (ANALÝZA TITULKŮ) ---
         positive_keywords = [
             "beat",
             "surge",
@@ -370,13 +370,11 @@ with tab2:
         pos_count = 0
         neg_count = 0
 
-        titles_text = []
         for item in news_items:
           content = item.get("content", item)
           title = (
               content.get("title") or item.get("title") or ""
           ).lower()
-          titles_text.append(title)
           for word in positive_keywords:
             if word in title:
               pos_count += 1
@@ -384,7 +382,6 @@ with tab2:
             if word in title:
               neg_count += 1
 
-        # Vykreslení laického shrnutí
         st.markdown("### 🤖 Laické shrnutí situace zpráv")
         if not news_items:
           st.info(
@@ -454,8 +451,137 @@ with tab2:
   else:
     st.info("Nejprve přidejte tickery do aktivního watchlistu.")
 
-# --- TAB 3: EDUKACE ---
+# --- TAB 3: FINANČNÍ VÝKAZY & ZDRAVÍ FIRMY ---
 with tab3:
+  st.subheader("📑 Finanční výkazy a laické zhodnocení zdraví")
+  if watchlist_tickers:
+    selected_ticker_fin = st.selectbox(
+        "Vyberte ticker pro zobrazení finančních výkazů:",
+        watchlist_tickers,
+        key="fin_ticker_select",
+    )
+
+    if selected_ticker_fin:
+      try:
+        stock = yf.Ticker(selected_ticker_fin)
+        info = stock.info or {}
+
+        # Vytažení klíčových metrik ze struktur
+        net_income = info.get("netIncomeToCommon", "N/A")
+        total_revenue = info.get("totalRevenue", "N/A")
+        total_debt = info.get("totalDebt", "N/A")
+        free_cash_flow = info.get("freeCashflow", "N/A")
+        profit_margin = info.get("profitMargins", "N/A")
+        debt_to_equity = info.get("debtToEquity", "N/A")
+
+        st.markdown("### 💡 Laické zhodnocení finanční stability")
+
+        # Jednoduchá pravidla pro laické vyhodnocení
+        health_notes = []
+        is_profitable = (
+            isinstance(net_income, (int, float)) and net_income > 0
+        )
+        has_high_debt = (
+            isinstance(debt_to_equity, (int, float)) and debt_to_equity > 200
+        )
+
+        if is_profitable:
+          st.success(
+              "🟢 **Firma je v zisku:** Podle posledních dat generuje čistý"
+              " zisk. To znamená, že nejde o krachující projekt bez příjmů."
+          )
+        else:
+          st.warning(
+              "🔴 **Firma je ve ztrátě nebo data chybí:** Společnost buď"
+              " vykazuje ztrátu, nebo jde o růstovou firmu, která raději"
+              " reinvestuje. Pozor na riziko."
+          )
+
+        if has_high_debt:
+          st.warning(
+              "⚠️ **Vysoké zadlužení:** Poměr dluhu vůči kapitálu (D/E) je"
+              " poměrně vysoký. Při poklesu ekonomiky může mít firma problém se"
+              " splácením."
+          )
+        else:
+          st.success(
+              "🟢 **Zdravá úroveň dluhu:** Zadlužení firmy se drží v"
+              " akceptovatelných mezích."
+          )
+
+        st.markdown("---")
+        st.subheader("📊 Klíčové roční/kvartální ukazatele (Raw data)")
+
+        col1, col2 = st.columns(2)
+        with col1:
+          st.metric(
+              "Celkové tržby (Revenue)",
+              (
+                  f"{total_revenue:,.0f}"
+                  if isinstance(total_revenue, (int, float))
+                  else str(total_revenue)
+              ),
+          )
+          st.metric(
+              "Čistý zisk (Net Income)",
+              (
+                  f"{net_income:,.0f}"
+                  if isinstance(net_income, (int, float))
+                  else str(net_income)
+              ),
+          )
+          st.metric(
+              "Volné peněžní toky (FCF)",
+              (
+                  f"{free_cash_flow:,.0f}"
+                  if isinstance(free_cash_flow, (int, float))
+                  else str(free_cash_flow)
+              ),
+          )
+        with col2:
+          st.metric(
+              "Celkový dluh",
+              (
+                  f"{total_debt:,.0f}"
+                  if isinstance(total_debt, (int, float))
+                  else str(total_debt)
+              ),
+          )
+          st.metric(
+              "Zisková marže",
+              (
+                  f"{profit_margin*100:.1f}%"
+                  if isinstance(profit_margin, (int, float))
+                  else str(profit_margin)
+              ),
+          )
+          st.metric(
+              "Poměr dluhu k majetku (D/E)",
+              (
+                  f"{debt_to_equity:.1f}"
+                  if isinstance(debt_to_equity, (int, float))
+                  else str(debt_to_equity)
+              ),
+          )
+
+        # Tabulka podrobných výkazů přímo z yfinance
+        st.markdown("---")
+        st.subheader("📄 Detailní výkaz zisků a ztrát (Income Statement)")
+        fin_df = stock.financials
+        if fin_df is not None and not fin_df.empty:
+          st.dataframe(fin_df, use_container_width=True)
+        else:
+          st.info(
+              "Detailní tabulka výkazů není pro tento ticker k dispozici."
+          )
+
+      except Exception as e:
+        st.error(f"Nelze načíst finanční výkazy: {str(e)}")
+  else:
+    st.info("Nejprve přidejte tickery do aktivního watchlistu.")
+
+# --- TAB 4: EDUKACE ---
+with tab4:
   st.subheader("🧠 Jak odlišit paniku od reálného problému")
   st.markdown("""
     | Kritérium | 🟢 Panický pokles (Nákupní příležitost) | 🔴 Fundamentální problém (Riziko) |
@@ -465,7 +591,7 @@ with tab3:
     | **Objem (Volume)** | **Masivní nárůst** (kapitulace). | Nízký nebo průměrný objem. |
     """)
 
-# --- TAB 4: NÁSTROJE ---
-with tab4:
+# --- TAB 5: NÁSTROJE ---
+with tab5:
   st.subheader("🛠️ Doporučené externí nástroje")
   st.write("Finviz, TradingView, Simply Wall St.")
