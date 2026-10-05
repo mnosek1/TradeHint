@@ -12,66 +12,94 @@ st.caption(
     " výprodejů od fundamentálních problémů."
 )
 
-# --- SPRÁVA WATCHLISTU S VÝBĚREM BURZY ---
+
+# --- INTELIGENTNÍ PŘEVODNÍK FORMÁTU ---
+def parse_user_ticker(user_input: str) -> str:
+  """Převede zápis typu AT..LSE, BKTI.AMEX, 1846.SEHK na Yahoo formát (AT.L, BKTI, 1846.HK)."""
+  text = user_input.strip().upper()
+
+  # Mapa uživatelských kódů burz na Yahoo přípony
+  # (můžete přidat libovolné další)
+  exchange_map = {
+      ".LSE": ".L",
+      ".AMEX": "",
+      ".NYSE": "",
+      ".NASDAQ": "",
+      ".SEHK": ".HK",
+      ".SGX": ".SI",
+      ".PSE": ".PR",
+      ".XETRA": ".DE",
+      ".FRANKFURT": ".F",
+      ".SIX": ".SW",
+      ".TSX": ".TO",
+      ".ASX": ".AX",
+      ".TSE": ".T",
+  }
+
+  # Hledáme, zda vstup končí některým známi kódem burzy
+  for user_suffix, yf_suffix in exchange_map.items():
+    if text.endswith(user_suffix):
+      base_ticker = text[: -len(user_suffix)].strip()
+      # Speciální ošetření pro číselné tickery (např. SEHK vyžaduje 4 číslice)
+      if yf_suffix == ".HK" and base_ticker.isdigit():
+        base_ticker = base_ticker.zfill(4)
+      return f"{base_ticker}{yf_suffix}"
+
+  # Pokud uživatel zadal tečku nebo nic, zkusíme to nechat nebo vrátit čistý text
+  return text
+
+
+# --- SPRÁVA WATCHLISTU ---
 st.sidebar.header("⭐ Správa Watchlistu")
 st.sidebar.write(
-    "Přidejte akcie do svého seznamu výběrem burzy a zadáním symbolu."
+    "Zadejte ticker a burzu (např. `AT..LSE`, `BKTI.AMEX`, `1846.SEHK` nebo"
+    " `NVDA`)."
 )
 
-# Inicializace stavu pro watchlist v paměti relace (session_state)
 if "watchlist" not in st.session_state:
-  st.session_state.watchlist = [
-      "NVDA",
-      "CEZ.PR",
-      "1846.HK",
-      "AT.L",
-  ]  # Výchozí ukázky
+  st.session_state.watchlist = ["NVDA", "CEZ.PR", "1846.HK", "AT.L"]
 
 # Formulář pro přidání nového tickeru
 with st.sidebar.form("add_ticker_form"):
-  col_input, col_exchange = st.columns([2, 1])
-
-  with col_input:
-    ticker_input = st.text_input("Ticker / Kód:", placeholder="např. 1846 nebo AT")
-
-  with col_exchange:
-    # Mapování přehledných názvů burz na Yahoo přípony
-    exchange_mapping = {
-        "USA (NYSE / NASDAQ)": "",
-        "SEHK (Hongkong - .HK)": ".HK",
-        "LSE (Londýn - .L)": ".L",
-        "PSE (Praha - .PR)": ".PR",
-        "EBS / SIX (Švýcarsko - .SW)": ".SW",
-        "Xetra (Německo - .DE)": ".DE",
-        "Euronext (Paříž/Amsterdam - .PA/.AS)": ".PA",
-    }
-    selected_exchange_name = st.selectbox("Burza", list(exchange_mapping.keys()))
-
+  new_ticker_input = st.text_input(
+      "Ticker a burza:", placeholder="např. AT..LSE nebo BKTI.AMEX"
+  )
   submitted = st.form_submit_button("➕ Přidat do Watchlistu")
 
-  if submitted and ticker_input:
-    clean_ticker = ticker_input.strip().upper()
-    suffix = exchange_mapping[selected_exchange_name]
+  if submitted and new_ticker_input:
+    formatted_symbol = parse_user_ticker(new_ticker_input)
 
-    # Speciální ošetření pro číselné tickery (např. v SEHK často vyžadují 4 číslice)
-    if suffix == ".HK" and clean_ticker.isdigit():
-      clean_ticker = clean_ticker.zfill(4)
-
-    full_symbol = f"{clean_ticker}{suffix}"
-
-    if full_symbol not in st.session_state.watchlist:
-      st.session_state.watchlist.append(full_symbol)
-      st.success(f"Přidáno: {full_symbol}")
+    if formatted_symbol not in st.session_state.watchlist:
+      st.session_state.watchlist.append(formatted_symbol)
+      st.success(f"Přidáno jako: {formatted_symbol}")
     else:
       st.warning("Tento ticker už ve watchlistu je.")
 
-# Zobrazení aktuálního watchlistu s možností mazání
+# Zobrazení aktuálního watchlistu s posouváním a mazáním
 st.sidebar.subheader("Aktivní Watchlist:")
 if st.session_state.watchlist:
-  for item in list(st.session_state.watchlist):
-    col_item_name, col_item_del = st.sidebar.columns([3, 1])
-    col_item_name.write(f"• **{item}**")
-    if col_item_del.button("❌", key=f"del_{item}"):
+  for idx, item in enumerate(list(st.session_state.watchlist)):
+    col_name, col_up, col_down, col_del = st.sidebar.columns([2.5, 0.8, 0.8, 0.8])
+
+    col_name.write(f"• **{item}**")
+
+    if idx > 0:
+      if col_up.button("▲", key=f"up_{item}"):
+        st.session_state.watchlist[idx], st.session_state.watchlist[idx - 1] = (
+            st.session_state.watchlist[idx - 1],
+            st.session_state.watchlist[idx],
+        )
+        st.rerun()
+
+    if idx < len(st.session_state.watchlist) - 1:
+      if col_down.button("▼", key=f"down_{item}"):
+        st.session_state.watchlist[idx], st.session_state.watchlist[idx + 1] = (
+            st.session_state.watchlist[idx + 1],
+            st.session_state.watchlist[idx],
+        )
+        st.rerun()
+
+    if col_del.button("❌", key=f"del_{item}"):
       st.session_state.watchlist.remove(item)
       st.rerun()
 
@@ -165,11 +193,10 @@ with tab1:
           if isinstance(profit_margins, (int, float)) and profit_margins < 0:
             panic_points -= 1
 
-          # Určení statusu
           if panic_points >= 4:
             status = "🔥 Pravděpodobná panika"
           elif panic_points >= 2:
-            status = "⚠️ Mírná korekce"
+            status = "⚠️️ Mírná korekce"
           else:
             status = "ℹ️ Standardní pohyb"
 
@@ -197,10 +224,6 @@ with tab1:
     if results:
       df_results = pd.DataFrame(results)
       st.dataframe(df_results, use_container_width=True)
-      st.info(
-          "💡 **Tip:** Tabulka je plně interaktivní. Kliknutím na záhlaví"
-          " sloupců můžete řádky seřadit."
-      )
     else:
       st.error(
           "Nepodařilo se načíst data pro zadané tickery. Zkontrolujte, zda"
@@ -225,7 +248,7 @@ with tab2:
         if not news_items:
           st.info(
               f"Pro tento ticker ({selected_ticker_news}) nebyly nalezeny žádné"
-              " aktuální zprávy."
+              " zprávy."
           )
         else:
           for item in news_items[:10]:
@@ -245,47 +268,20 @@ with tab2:
       except Exception as e:
         st.error(f"Nelze načíst zprávy: {str(e)}")
   else:
-    st.info("Nejprve přidejte nějaké tickery v postranním panelu.")
+    st.info("Nejprve přidejte tickery v postranním panelu.")
 
 # --- TAB 3: EDUKACE ---
 with tab3:
   st.subheader("🧠 Jak odlišit paniku od reálného problému")
-
   st.markdown("""
     | Kritérium | 🟢 Panický pokles (Nákupní příležitost) | 🔴 Fundamentální problém (Riziko) |
     | :--- | :--- | :--- |
-    | **Druh zprávy** | Makroekonomické obavy (inflace, úroky), snížení cílové ceny analytikem, dočasný výpadek v dodávkách. | Účetní podvody, vyšetřování úřady, ztráta klíčového zákazníka, permanentní ztráta trhu. |
-    | **RSI (14 dní)** | **Pod 30** (Extrémně přeprodaný trh na denním grafu). | RSI se drží mezi 40-50, cena pozvolna klesá celé měsíce. |
-    | **Objem (Volume)** | **Masivní nárůst objemu** (Spike) - Znak kapitulace prodávajících. | Průměrný nebo nízký objem při neustálém poklesu. |
-    | **Zadlužení (D/E)** | Nízký dluh ($D/E < 1.0$), silná hotovost na rozvaze. | Vysoký dluh ($D/E > 2.0$), riziko neschopnosti splácet. |
-    | **Zisková marže** | Stabilní, společnost vytváří kladný volný cash flow (FCF). | Záporné marže, společnost pálí hotovost. |
+    | **Druh zprávy** | Makroekonomické obavy, dočasný výpadek. | Účetní podvody, trvalá ztráta trhu. |
+    | **RSI (14 dní)** | **Pod 30** (Přeprodáno). | Drží se 40–50, pozvolný pokles. |
+    | **Objem (Volume)** | **Masivní nárůst** (kapitulace). | Nízký nebo průměrný objem. |
     """)
 
 # --- TAB 4: NÁSTROJE ---
 with tab4:
   st.subheader("🛠️ Doporučené externí nástroje")
-
-  col_a, col_b, col_c = st.columns(3)
-
-  with col_a:
-    st.markdown("### 1. Finviz Screener")
-    st.write("Filtrujte akcie přímo v panice pomocí parametrů:")
-    st.code(
-        "Technical: RSI(14) < 30\nPerformance: Week Down"
-        " -10%\nFundamental: Debt/Equity < 0.5",
-        language="text",
-    )
-
-  with col_b:
-    st.markdown("### 2. TradingView")
-    st.write(
-        "Sledujte **Volume Profile (VRVP)** a vyhledávejte úroveň **POC (Point"
-        " of Control)** pro přesný čas vstupu do pozice."
-    )
-
-  with col_c:
-    st.markdown("### 3. Simply Wall St")
-    st.write(
-        "Použijte vizuální diagram **Snowflake** k rychlému ověření, zda má firma"
-        " dostatečné FCF na pokrytí závazků."
-    )
+  st.write("Finviz, TradingView, Simply Wall St.")
