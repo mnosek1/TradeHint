@@ -1,18 +1,3 @@
-import pandas as pd
-import streamlit as st
-import yfinance as yf
-
-st.set_page_config(
-    page_title="Stock Panic Dip Analyzer", page_icon="📈", layout="wide"
-)
-
-st.title("📈 Stock Panic Dip Analyzer")
-st.caption(
-    "Nástroj pro analýzu panických poklesů akcií a odlišení dočasných"
-    " výprodejů od fundamentálních problémů."
-)
-
-
 # --- ROZŠÍŘENÝ A ROBUSTNÍ PŘEVODNÍK FORMÁTU ---
 def parse_user_ticker(user_input: str) -> str:
   """Univerzální převodník pro mapování burz na Yahoo Finance formát."""
@@ -50,7 +35,7 @@ def parse_user_ticker(user_input: str) -> str:
       ".SW": ".SW",
       ".TSX": ".TO",
       ".TO": ".TO",
-      ".T": ".TO",  # Kanadská burza .T -> .TO pro Yahoo
+      ".T": ".TO",  # Oprava: Kanadská burza .T -> .TO pro Yahoo Finance
       ".ASX": ".AX",
       ".AX": ".AX",
       ".TSE": ".T",
@@ -64,8 +49,8 @@ def parse_user_ticker(user_input: str) -> str:
       ".STHLM": ".ST",
       ".HELSINKI": ".HE",
       ".COPENHAGEN": ".CO",
-      ".EB": ".EB",
-      ".EBS": ".EB",  # Ošetření alternativní koncovky Bern
+      ".EB": ".SW",
+      ".EBS": ".SW",  # Bernská burza mapovaná na Yahoo ekvivalent
       ".VALUE": "",
       ".IIS": "",
       ".SFB": ".ST",
@@ -74,7 +59,7 @@ def parse_user_ticker(user_input: str) -> str:
       ".PK": ".PK",
   }
 
-  # 1. Zkusíme aplikovat známé mapování
+  # 1. Zkusíme aplikovat známé mapování koncovek
   for user_suffix, yf_suffix in exchange_map.items():
     if text.endswith(user_suffix):
       base_ticker = text[: -len(user_suffix)].strip()
@@ -83,7 +68,7 @@ def parse_user_ticker(user_input: str) -> str:
         base_ticker = base_ticker.zfill(4)
       return f"{base_ticker}{yf_suffix}"
 
-  # 2. Pokud končí na mezeru a burzu
+  # 2. Pokud končí na mezeru a burzu (např. "PXT T")
   parts = text.split(" ")
   if len(parts) >= 2:
     potential_suffix = "." + parts[-1]
@@ -92,294 +77,7 @@ def parse_user_ticker(user_input: str) -> str:
       yf_suffix = exchange_map[potential_suffix]
       return f"{base_ticker}{yf_suffix}"
 
-  # 3. Obecný fallback pro ostatní
+  # 3. Speciální fallback pro tickery zadané bez burzy, ale známé z Xetry (např. C3R -> C3R.DE)
+  # Pokud ticker neobsahuje tečku a je to čistě text, zkusíme ho nechat nebo ošetřit,
+  # popř. pokud víte, že jde o Xetru, můžete zde vynutit .DE, ale raději nechejme standard.
   return text.replace(" ", "-")
-
-
-# --- SPRÁVA VÍCE WATCHLISTŮ V SESSION STATE ---
-if "watchlists" not in st.session_state:
-  st.session_state.watchlists = {
-      "Hlavní watchlist": [
-          "NVDA",
-          "CEZ.PR",
-          "1846.HK",
-          "AT.L",
-          "VWCE.DE",
-          "UNH",
-      ]
-  }
-
-if "active_watchlist" not in st.session_state:
-  st.session_state.active_watchlist = "Hlavní watchlist"
-
-st.sidebar.header("📁 Správa Watchlistů")
-
-watchlist_names = list(st.session_state.watchlists.keys())
-selected_wl = st.sidebar.selectbox(
-    "Aktivní watchlist:",
-    watchlist_names,
-    index=watchlist_names.index(st.session_state.active_watchlist),
-)
-st.session_state.active_watchlist = selected_wl
-
-with st.sidebar.expander("➕ Vytvořit nový watchlist"):
-  new_wl_name = st.text_input("Název watchlistu:")
-  if st.button("Vytvořit"):
-    if new_wl_name and new_wl_name not in st.session_state.watchlists:
-      st.session_state.watchlists[new_wl_name] = []
-      st.session_state.active_watchlist = new_wl_name
-      st.rerun()
-    else:
-      st.warning("Zadejte platný a unikátní název.")
-
-current_tickers = st.session_state.watchlists[st.session_state.active_watchlist]
-
-# --- HROMADNÉ PŘIDÁVÁNÍ TICKETŮ ---
-st.sidebar.subheader(f"⭐ Položky v: {st.session_state.active_watchlist}")
-st.sidebar.write(
-    "Vložte více tickerů najednou (oddělené čárkou, mezerou nebo novým řádkem)."
-)
-
-bulk_input = st.sidebar.text_area(
-    "Hromadné vložení:",
-    placeholder="1846.SEHK, AT..LSE, UNH.NYSE, ...",
-    key="input_bulk_tickers",
-)
-
-if st.sidebar.button("➕ Přidat do seznamu"):
-  if bulk_input:
-    raw_tokens = []
-    for line in bulk_input.split("\n"):
-      for token in line.replace(";", ",").split(","):
-        clean_token = token.strip()
-        if clean_token:
-          raw_tokens.append(clean_token)
-
-    added_count = 0
-    for token in raw_tokens:
-      formatted_symbol = parse_user_ticker(token)
-      if formatted_symbol and formatted_symbol not in current_tickers:
-        current_tickers.append(formatted_symbol)
-        added_count += 1
-
-    st.sidebar.success(f"Úspěšně přidáno {added_count} položek.")
-    st.rerun()
-
-# --- ZOBRAZENÍ A ŘAZENÍ POLOŽEK ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("Správa pořadí a mazání:")
-
-if current_tickers:
-  for idx, item in enumerate(list(current_tickers)):
-    cols = st.sidebar.columns([2.5, 1, 1])
-    cols[0].write(f"**{idx+1}. {item}**")
-
-    if idx > 0 and cols[1].button(
-        "⬆️", key=f"up_{st.session_state.active_watchlist}_{idx}_{item}"
-    ):
-      current_tickers[idx], current_tickers[idx - 1] = (
-          current_tickers[idx - 1],
-          current_tickers[idx],
-      )
-      st.rerun()
-
-    if cols[2].button(
-        "❌", key=f"del_{st.session_state.active_watchlist}_{idx}_{item}"
-    ):
-      current_tickers.remove(item)
-      st.rerun()
-
-  if st.sidebar.button("🗑️ Vyčistit tento watchlist"):
-    st.session_state.watchlists[st.session_state.active_watchlist] = []
-    st.rerun()
-else:
-  st.sidebar.info("Tento watchlist je prázdný.")
-
-watchlist_tickers = current_tickers
-
-# Definice záložek aplikace
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Srovnávací přehled Watchlistu",
-    "📰 Zprávy pro vybraný ticker",
-    "🧠 Jak poznat paniku (Manuál)",
-    "🛠️ Další nástroje & Tipy",
-])
-
-# --- TAB 1: SROVNÁVACÍ PŘEHLED WATCHLISTU ---
-with tab1:
-  st.subheader(
-      f"📊 Hromadná analýza panických poklesů ({st.session_state.active_watchlist})"
-  )
-
-  if not watchlist_tickers:
-    st.warning("Zadejte prosím alespoň jeden ticker v postranním panelu.")
-  else:
-    results = []
-    failed_tickers = []
-
-    with st.spinner(
-        "Stahuji data a analyzuji všechny tickery ve watchlistu..."
-    ):
-      for ticker_symbol in watchlist_tickers:
-        try:
-          stock = yf.Ticker(ticker_symbol)
-          hist = stock.history(period="60d")
-
-          if hist.empty:
-            failed_tickers.append(ticker_symbol)
-            continue
-
-          info = {}
-          try:
-            info = stock.info or {}
-          except Exception:
-            info = {}
-
-          current_price = float(hist["Close"].iloc[-1])
-          prev_close = (
-              float(hist["Close"].iloc[-2])
-              if len(hist) > 1
-              else current_price
-          )
-          day_change_pct = ((current_price - prev_close) / prev_close) * 100
-
-          fifty_two_high = info.get(
-              "fiftyTwoWeekHigh", float(hist["High"].max())
-          )
-          drop_from_high = (
-              ((current_price - fifty_two_high) / fifty_two_high) * 100
-              if fifty_two_high
-              else 0.0
-          )
-
-          avg_vol = float(hist["Volume"].tail(20).mean())
-          today_vol = float(hist["Volume"].iloc[-1])
-          vol_ratio = today_vol / avg_vol if avg_vol > 0 else 1.0
-
-          # Výpočet RSI (14 dní)
-          delta = hist["Close"].diff()
-          gain = delta.where(delta > 0, 0).rolling(window=14).mean()
-          loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
-          rs = gain / loss
-          rsi_series = 100 - (100 / (1 + rs))
-          rsi = float(rsi_series.iloc[-1]) if not rsi_series.empty else 50.0
-
-          debt_to_equity = info.get("debtToEquity", "N/A")
-          forward_pe = info.get("forwardPE", "N/A")
-          profit_margins = info.get("profitMargins", "N/A")
-
-          panic_points = 0
-          if rsi < 35:
-            panic_points += 3
-          if day_change_pct < -3.0:
-            panic_points += 2
-          if vol_ratio > 1.5:
-            panic_points += 2
-
-          if isinstance(debt_to_equity, (int, float)) and debt_to_equity > 150:
-            panic_points -= 2
-          if isinstance(profit_margins, (int, float)) and profit_margins < 0:
-            panic_points -= 1
-
-          if panic_points >= 4:
-            status = "🔥 Pravděpodobná panika"
-          elif panic_points >= 2:
-            status = "⚠️ Mírná korekce"
-          else:
-            status = "ℹ️ Standardní pohyb"
-
-          margin_fmt = (
-              f"{profit_margins*100:.1f}%"
-              if isinstance(profit_margins, (int, float))
-              else str(profit_margins)
-          )
-
-          results.append({
-              "Ticker": ticker_symbol,
-              "Cena": round(current_price, 2),
-              "Denní změna (%)": round(day_change_pct, 2),
-              "Pokles od max (%)": round(drop_from_high, 2),
-              "RSI (14)": round(rsi, 1),
-              "Objem (x)": round(vol_ratio, 2),
-              "D/E Dluh": debt_to_equity,
-              "Marže": margin_fmt,
-              "P/E": forward_pe,
-              "Vyhodnocení": status,
-          })
-        except Exception:
-          failed_tickers.append(ticker_symbol)
-
-    if results:
-      df_results = pd.DataFrame(results)
-      st.dataframe(df_results, use_container_width=True)
-
-    if failed_tickers:
-      st.error(
-          "⚠️ **Následující tickery se nepodařilo najít nebo stáhnout jejich"
-          f" data:** {', '.join(failed_tickers)}"
-      )
-      st.info(
-          "Zkontrolujte prosím, zda daný ticker na burze reálně existuje pod"
-          " tímto symbolem."
-      )
-
-    if not results and not failed_tickers:
-      st.error("Nepodařilo se načíst data pro zadané tickery.")
-
-# --- TAB 2: ZPRÁVY ---
-with tab2:
-  st.subheader("📰 Aktuální zprávy pro vybraný ticker")
-  if watchlist_tickers:
-    selected_ticker_news = st.selectbox(
-        "Vyberte ticker pro zobrazení zpráv:",
-        watchlist_tickers,
-        key="news_ticker_select",
-    )
-
-    if selected_ticker_news:
-      try:
-        stock = yf.Ticker(selected_ticker_news)
-        news_items = (
-            stock.news if hasattr(stock, "news") and stock.news else []
-        )
-
-        if not news_items:
-          st.info(
-              f"Pro tento ticker ({selected_ticker_news}) nebyly nalezeny žádné"
-              " zprávy."
-          )
-        else:
-          for item in news_items[:10]:
-            title = item.get("title") or item.get("content", {}).get(
-                "title", "Bez názvu"
-            )
-            publisher = item.get("publisher") or item.get("content", {}).get(
-                "provider", {}
-            ).get("displayName", "Zdroj")
-            link = (
-                item.get("link")
-                or item.get("url")
-                or item.get("content", {}).get("canonicalUrl", {}).get("url", "")
-            )
-
-            st.markdown(f"- [**{title}**]({link}) *({publisher})*")
-      except Exception as e:
-        st.error(f"Nelze načíst zprávy: {str(e)}")
-  else:
-    st.info("Nejprve přidejte tickery do aktivního watchlistu.")
-
-# --- TAB 3: EDUKACE ---
-with tab3:
-  st.subheader("🧠 Jak odlišit paniku od reálného problému")
-  st.markdown("""
-    | Kritérium | 🟢 Panický pokles (Nákupní příležitost) | 🔴 Fundamentální problém (Riziko) |
-    | :--- | :--- | :--- |
-    | **Druh zprávy** | Makroekonomické obavy, dočasný výpadek. | Účetní podvody, trvalá ztráta trhu. |
-    | **RSI (14 dní)** | **Pod 30** (Přeprodáno). | Drží se 40–50, pozvolný pokles. |
-    | **Objem (Volume)** | **Masivní nárůst** (kapitulace). | Nízký nebo průměrný objem. |
-    """)
-
-# --- TAB 4: NÁSTROJE ---
-with tab4:
-  st.subheader("🛠️ Doporučené externí nástroje")
-  st.write("Finviz, TradingView, Simply Wall St.")
