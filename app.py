@@ -13,11 +13,12 @@ st.caption(
 )
 
 
-# --- INTELIGENTNÍ PŘEVODNÍK FORMÁTU ---
+# --- INTELIGENTNÍ PŘEVODNÍK FORMÁTU (ROZŠÍŘENÝ) ---
 def parse_user_ticker(user_input: str) -> str:
-  """Převede zápis typu AT..LSE, BKTI.AMEX, 1846.SEHK na Yahoo formát (AT.L, BKTI, 1846.HK)."""
+  """Převede zápis typu AT..LSE, BKTI.AMEX, ZEP.IBIS2 na Yahoo formát."""
   text = user_input.strip().upper()
 
+  # Rozšířené mapování kódů burz na Yahoo přípony
   exchange_map = {
       ".LSE": ".L",
       ".AMEX": "",
@@ -27,11 +28,20 @@ def parse_user_ticker(user_input: str) -> str:
       ".SGX": ".SI",
       ".PSE": ".PR",
       ".XETRA": ".DE",
+      ".IBIS2": ".DE",
+      ".IBIS": ".DE",
       ".FRANKFURT": ".F",
       ".SIX": ".SW",
       ".TSX": ".TO",
       ".ASX": ".AX",
       ".TSE": ".T",
+      ".EPA": ".PA",
+      ".PARIS": ".PA",
+      ".MIL": ".MI",
+      ".MADRID": ".MC",
+      ".STHLM": ".ST",
+      ".HELSINKI": ".HE",
+      ".COPENHAGEN": ".CO",
   }
 
   for user_suffix, yf_suffix in exchange_map.items():
@@ -80,8 +90,7 @@ current_tickers = st.session_state.watchlists[st.session_state.active_watchlist]
 # --- PŘIDÁVÁNÍ TICKETŮ ---
 st.sidebar.subheader(f"⭐ Položky v: {st.session_state.active_watchlist}")
 st.sidebar.write(
-    "Zadejte ticker a burzu (např. `AT..LSE`, `BKTI.AMEX`, `1846.SEHK` nebo"
-    " `NVDA`)."
+    "Zadejte ticker a burzu (např. `AT..LSE`, `BKTI.AMEX`, `ZEP.IBIS2`)."
 )
 
 new_ticker_input = st.sidebar.text_input(
@@ -105,11 +114,13 @@ st.sidebar.subheader("Správa pořadí a mazání:")
 
 if current_tickers:
   for idx, item in enumerate(list(current_tickers)):
-    cols = st.sidebar.columns([3, 1, 1])
-    cols.write(f"**{idx+1}. {item}**")
+    cols = st.sidebar.columns([2.5, 1, 1])
+    cols[0].write(f"**{idx+1}. {item}**")
 
     # Přesun výše
-    if idx > 0 and cols[1].button("⬆️", key=f"up_{st.session_state.active_watchlist}_{item}"):
+    if idx > 0 and cols[1].button(
+        "⬆️", key=f"up_{st.session_state.active_watchlist}_{idx}_{item}"
+    ):
       current_tickers[idx], current_tickers[idx - 1] = (
           current_tickers[idx - 1],
           current_tickers[idx],
@@ -117,7 +128,9 @@ if current_tickers:
       st.rerun()
 
     # Smazání položky
-    if cols[2].button("❌", key=f"del_{st.session_state.active_watchlist}_{item}"):
+    if cols[2].button(
+        "❌", key=f"del_{st.session_state.active_watchlist}_{idx}_{item}"
+    ):
       current_tickers.remove(item)
       st.rerun()
 
@@ -216,7 +229,7 @@ with tab1:
           if panic_points >= 4:
             status = "🔥 Pravděpodobná panika"
           elif panic_points >= 2:
-            status = "⚠️️ Mírná korekce"
+            status = "⚠️ Mírná korekce"
           else:
             status = "ℹ️ Standardní pohyb"
 
