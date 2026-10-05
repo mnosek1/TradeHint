@@ -21,11 +21,9 @@ def parse_user_ticker(user_input: str) -> str:
 
   text = user_input.strip().upper()
 
-  # Oprava případných překlepů se zdvojenými tečkami (např. AT..L -> AT.L)
   while ".." in text:
     text = text.replace("..", ".")
 
-  # Slovník přímého mapování uživatelských koncovek na Yahoo přípony
   exchange_map = {
       ".LSE": ".L",
       ".L": ".L",
@@ -196,7 +194,7 @@ watchlist_tickers = current_tickers
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Srovnávací přehled Watchlistu",
-    "📰 Zprávy pro vybraný ticker",
+    "📰 Zprávy & Laická interpretace",
     "🧠 Jak poznat paniku (Manuál)",
     "🛠️ Další nástroje & Tipy",
 ])
@@ -314,12 +312,12 @@ with tab1:
           f" data:** {', '.join(failed_tickers)}"
       )
 
-# --- TAB 2: ZPRÁVY ---
+# --- TAB 2: ZPRÁVY & LAICKÁ INTERPRETACE ---
 with tab2:
-  st.subheader("📰 Aktuální zprávy pro vybraný ticker")
+  st.subheader("📰 Zprávy a laické shrnutí nálady")
   if watchlist_tickers:
     selected_ticker_news = st.selectbox(
-        "Vyberte ticker pro zobrazení zpráv:",
+        "Vyberte ticker pro analýzu zpráv:",
         watchlist_tickers,
         key="news_ticker_select",
     )
@@ -337,11 +335,86 @@ with tab2:
         if not news_items and hasattr(stock, "news"):
           news_items = stock.news or []
 
+        # --- LAICKÁ INTERPRETACE (ANALÝZA TITULKŮ) ---
+        positive_keywords = [
+            "beat",
+            "surge",
+            "jump",
+            "higher",
+            "growth",
+            "profit",
+            "upgrade",
+            "rally",
+            "buy",
+            "strong",
+            "record",
+            "positive",
+        ]
+        negative_keywords = [
+            "drop",
+            "fall",
+            "plunge",
+            "slump",
+            "loss",
+            "miss",
+            "downgrade",
+            "cut",
+            "warning",
+            "risk",
+            "lawsuit",
+            "investigation",
+            "fraud",
+            "negative",
+        ]
+
+        pos_count = 0
+        neg_count = 0
+
+        titles_text = []
+        for item in news_items:
+          content = item.get("content", item)
+          title = (
+              content.get("title") or item.get("title") or ""
+          ).lower()
+          titles_text.append(title)
+          for word in positive_keywords:
+            if word in title:
+              pos_count += 1
+          for word in negative_keywords:
+            if word in title:
+              neg_count += 1
+
+        # Vykreslení laického shrnutí
+        st.markdown("### 🤖 Laické shrnutí situace zpráv")
         if not news_items:
           st.info(
-              f"Pro tento ticker ({selected_ticker_news}) se nepodařilo načíst"
-              " zprávy přímo přes yfinance API."
+              f"Pro {selected_ticker_news} nejsou k dispozici čerstvé zprávy v"
+              " API."
           )
+        else:
+          if neg_count > pos_count + 1:
+            st.error(
+                "🔴 **Převažují varovné/negativní zprávy:** V titulcích se často"
+                " objevují výrazy o poklesech, horších výsledcích nebo rizicích."
+                " Pokles ceny může mít reálný fundamentální důvod, buďte"
+                " opatrní."
+            )
+          elif pos_count > neg_count + 1:
+            st.success(
+                "🟢 **Převažují pozitivní zprávy:** Zprávy hovoří o růstu,"
+                " dobrých výsledcích nebo doporučeních k nákupu. Pokud cena"
+                " klesá, může jít o klasický krátkodobý výpadek (panika bez"
+                " důvodu)."
+            )
+          else:
+            st.info(
+                "⚪ **Neutrální/smíšené zprávy:** Zprávy nevykazují žádný"
+                " extrémní směr, jde o běžný mediální šum nebo rutinní zprávy."
+            )
+
+        st.markdown("---")
+        st.subheader("Seznam nejnovějších zpráv:")
+        if not news_items:
           yahoo_url = f"https://finance.yahoo.com/quote/{selected_ticker_news}"
           st.markdown(
               f"👉 [Otevřít profil a zprávy pro {selected_ticker_news} přímo"
